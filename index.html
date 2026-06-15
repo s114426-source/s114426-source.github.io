@@ -1,12 +1,355 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>HAHA</title>
-    <link rel="icon" href="sm_5b321ca743d4a.jpg">
-  </head>
-  <body>
-    hello world
-  </body>
-</html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>豪華皇家莊園農場 - 徹底修復版</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            font-family: sans-serif;
+            background-color: #558b2f;
+        }
+        
+        /* 網頁頂部獨立的控制面板，不影響下方草地 */
+        #top-bar {
+            width: 100%; height: 70px;
+            background: #ffffff;
+            border-bottom: 3px solid #cfb53b;
+            display: flex; align-items: center; justify-content: center;
+            gap: 15px; z-index: 9999; position: relative;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .status { font-weight: bold; color: #1b5e20; font-size: 16px; }
+        .btn-group { display: flex; gap: 6px; }
+        .btn {
+            padding: 8px 14px; border: none; border-radius: 20px;
+            font-weight: bold; cursor: pointer; font-size: 14px;
+        }
+        .btn-active { background-color: #1b5e20; color: white; }
+        .btn-normal { background-color: #f1f8e9; color: #333; }
+        .btn-shop { background-color: #b59410; color: white; }
 
+        /* 下方滿版的大草原 */
+        #meadow {
+            width: 100%; height: calc(100% - 70px);
+            background: repeating-linear-gradient(90deg, #689f38 0px, #689f38 60px, #7cb342 60px, #7cb342 120px);
+            position: relative;
+            cursor: crosshair;
+        }
+
+        /* 遊戲內所有元素的定位基礎 */
+        .game-element {
+            position: absolute;
+            user-select: none;
+            transform: translate(-50%, -50%);
+        }
+        .tree { font-size: 45px; cursor: pointer; z-index: 10; text-align: center; }
+        .feed { font-size: 28px; z-index: 5; }
+        .animal { font-size: 42px; cursor: pointer; z-index: 20; transition: left 1.2s linear, top 1.2s linear; }
+        
+        /* 莊園景觀 */
+        .castle { font-size: 90px; z-index: 2; }
+        .butler { font-size: 42px; z-index: 30; cursor: pointer; transition: left 0.8s ease, top 0.8s ease; }
+        .fountain { font-size: 80px; z-index: 3; }
+        .statue { font-size: 50px; z-index: 3; }
+
+        .tree-info {
+            position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+            font-size: 11px; background: rgba(27, 94, 32, 0.9); color: white;
+            padding: 2px 6px; border-radius: 10px; white-space: nowrap;
+            border: 1px solid #cfb53b;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="top-bar">
+        <div class="status">👑 莊園資產: 💰<span id="moneyText">100</span></div>
+        <div class="btn-group">
+            <button id="modePlant" class="btn btn-active" onclick="switchMode('plant')">🌲 栽種名木 (💰10)</button>
+            <button id="modeFeed" class="btn btn-normal" onclick="switchMode('feed')">🌾 恩賜飼料 (💰3)</button>
+            <button id="modeWater" class="btn btn-normal" onclick="switchMode('water')">💧 皇家灌溉</button>
+            <button id="modeHarvest" class="btn btn-normal" onclick="switchMode('harvest')">🧺 莊園採收</button>
+        </div>
+        <button class="btn btn-shop" onclick="buyAnimal('cow')">🐄 頂級牛</button>
+        <button class="btn btn-shop" onclick="buyAnimal('horse')">🐎 純種馬</button>
+        <button class="btn btn-shop" onclick="buyAnimal('sheep')">🐑 羊</button>
+        <button class="btn btn-shop" onclick="buyAnimal('kangaroo')">🦘 袋鼠</button>
+    </div>
+
+    <div id="meadow">
+        <div class="game-element castle" style="left: 100px; top: 100px;">🏰</div>
+        <div id="helperFarmer" class="game-element butler" style="left: 110px; top: 160px;">🤵‍♂️</div>
+        
+        <div class="game-element fountain" style="left: 50%; top: 50%;">⛲️</div>
+        <div class="game-element statue" style="left: 42%; top: 50%;">🗿</div>
+        <div class="game-element statue" style="left: 58%; top: 50%;">🗿</div>
+    </div>
+
+<script>
+    let gameState = {
+        money: 100,
+        currentMode: 'plant',
+        trees: [],
+        animals: [],
+        feeds: [],
+        farmerIsHelping: false,
+        homeX: 110,
+        homeY: 160,
+        farmerX: 110,
+        farmerY: 160
+    };
+
+    const meadow = document.getElementById('meadow');
+    const helperFarmer = document.getElementById('helperFarmer');
+
+    // 初始化：綁定點擊事件與生成基本動物
+    window.onload = function() {
+        // 直接用標準事件監聽綁定草地點擊
+        meadow.addEventListener('click', handleMeadowClick);
+        // 獨立綁定管家點擊
+        helperFarmer.addEventListener('click', toggleFarmer);
+
+        // 放四隻初始小動物
+        spawnAnimal('cow', window.innerWidth * 0.4, window.innerHeight * 0.3);
+        spawnAnimal('horse', window.innerWidth * 0.6, window.innerHeight * 0.4);
+        spawnAnimal('sheep', window.innerWidth * 0.3, window.innerHeight * 0.6);
+        spawnAnimal('kangaroo', window.innerWidth * 0.7, window.innerHeight * 0.6);
+
+        // 啟動定時器
+        setInterval(gameLoop, 1200);
+    };
+
+    // 切換點擊模式
+    function switchMode(mode) {
+        gameState.currentMode = mode;
+        document.getElementById('modePlant').className = 'btn ' + (mode === 'plant' ? 'btn-active' : 'btn-normal');
+        document.getElementById('modeFeed').className = 'btn ' + (mode === 'feed' ? 'btn-active' : 'btn-normal');
+        document.getElementById('modeWater').className = 'btn ' + (mode === 'water' ? 'btn-active' : 'btn-normal');
+        document.getElementById('modeHarvest').className = 'btn ' + (mode === 'harvest' ? 'btn-active' : 'btn-normal');
+    }
+
+    // 草地上的點擊主邏輯
+    function handleMeadowClick(event) {
+        // 取得點擊在草地上的精準相對位置
+        const rect = meadow.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        // 1. 種樹模式
+        if (gameState.currentMode === 'plant') {
+            if (gameState.money >= 10) {
+                gameState.money -= 10;
+                createTree(x, y);
+            }
+        } 
+        // 2. 撒飼料模式
+        else if (gameState.currentMode === 'feed') {
+            if (gameState.money >= 3) {
+                gameState.money -= 3;
+                createFeed(x, y);
+            }
+        }
+        updateMoneyUI();
+    }
+
+    function updateMoneyUI() {
+        document.getElementById('moneyText').innerText = gameState.money;
+    }
+
+    // 種植奢華樹木
+    function createTree(x, y) {
+        const id = 'tree_' + Math.random();
+        const treeObj = { id: id, x: x, y: y, stage: 'seed', progress: 10 };
+        gameState.trees.push(treeObj);
+
+        const el = document.createElement('div');
+        el.id = id; el.className = 'game-element tree';
+        el.style.left = x + 'px'; el.style.top = y + 'px';
+        el.innerHTML = '🌱<div class="tree-info">奢華樹苗</div>';
+        
+        // 點擊單棵樹木進行澆水或採收
+        el.addEventListener('click', function(e) {
+            e.stopPropagation(); // 防止觸發底層草地重複種植
+            interactTree(treeObj);
+        });
+
+        meadow.appendChild(el);
+    }
+
+    function interactTree(tree) {
+        const el = document.getElementById(tree.id);
+        if (!el) return;
+
+        if (gameState.currentMode === 'water' && tree.stage !== 'ready') {
+            tree.progress += 30;
+            updateTreeVisual(tree, el);
+        } else if (gameState.currentMode === 'harvest' && tree.stage === 'ready') {
+            gameState.money += 35;
+            updateMoneyUI();
+            tree.stage = 'seed'; tree.progress = 10;
+            el.innerHTML = '🌱<div class="tree-info">奢華樹苗</div>';
+        }
+    }
+
+    function updateTreeVisual(tree, el) {
+        if (tree.progress >= 100) {
+            tree.stage = 'ready';
+            el.innerHTML = '🍎<div class="tree-info" style="background:#b59410; border:1px solid gold;">黃金果實</div>';
+        } else if (tree.progress >= 50) {
+            tree.stage = 'growing';
+            el.innerHTML = '🌿<div class="tree-info">極致生長</div>';
+        } else {
+            tree.stage = 'seed';
+            el.innerHTML = '🌱<div class="tree-info">奢華樹苗</div>';
+        }
+    }
+
+    // 在點擊處產生飼料
+    function createFeed(x, y) {
+        const id = 'feed_' + Math.random();
+        const feedObj = { id: id, x: x, y: y, count: 2 };
+        gameState.feeds.push(feedObj);
+
+        const el = document.createElement('div');
+        el.id = id; el.className = 'game-element feed';
+        el.style.left = x + 'px'; el.style.top = y + 'px';
+        el.innerText = '🌾';
+        meadow.appendChild(el);
+    }
+
+    // 切換老管家幫忙狀態
+    function toggleFarmer(e) {
+        e.stopPropagation();
+        gameState.farmerIsHelping = !gameState.farmerIsHelping;
+        helperFarmer.innerText = gameState.farmerIsHelping ? '🤵‍♂️✨' : '🤵‍♂️';
+        
+        if (!gameState.farmerIsHelping) {
+            // 關閉幫忙時，管家自動走回別墅門口
+            gameState.farmerX = gameState.homeX;
+            gameState.farmerY = gameState.homeY;
+            helperFarmer.style.left = gameState.farmerX + 'px';
+            helperFarmer.style.top = gameState.farmerY + 'px';
+        }
+    }
+
+    // 購買新動物
+    function buyAnimal(type) {
+        let cost = { cow: 30, horse: 40, sheep: 25, kangaroo: 50 }[type];
+        if (gameState.money >= cost) {
+            gameState.money -= cost;
+            updateMoneyUI();
+            // 在中央噴泉附近生成
+            spawnAnimal(type, meadow.clientWidth * 0.5, meadow.clientHeight * 0.6);
+        }
+    }
+
+    function spawnAnimal(type, x, y) {
+        const id = 'animal_' + Math.random();
+        const emojis = { cow: '🐄', horse: '🐎', sheep: '🐑', kangaroo: '🦘' };
+        const animalObj = { id: id, x: x, y: y, emoji: emojis[type], isScared: false };
+        gameState.animals.push(animalObj);
+
+        const el = document.createElement('div');
+        el.id = id; el.className = 'game-element animal';
+        el.style.left = x + 'px'; el.style.top = y + 'px';
+        el.innerText = animalObj.emoji;
+
+        // 點擊動物反向逃跑
+        el.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (animalObj.isScared) return;
+            animalObj.isScared = true;
+            
+            // 隨機往四周大跨步跑開
+            animalObj.x += (Math.random() - 0.5) * 400;
+            animalObj.y += (Math.random() - 0.5) * 400;
+            el.style.left = animalObj.x + 'px'; el.style.top = animalObj.y + 'px';
+            
+            setTimeout(() => { animalObj.isScared = false; }, 1000);
+        });
+
+        meadow.appendChild(el);
+    }
+
+    // 核心定時器（每 1.2 秒更新一次全場數據與 AI 移動）
+    function gameLoop() {
+        const maxW = meadow.clientWidth;
+        const maxH = meadow.clientHeight;
+
+        // 1. 植物自然微幅生長
+        gameState.trees.forEach(t => {
+            if (t.stage !== 'ready') {
+                t.progress += 2;
+                const el = document.getElementById(t.id);
+                if (el) updateTreeVisual(t, el);
+            }
+        });
+
+        // 2. 老管家全自動工作邏輯
+        if (gameState.farmerIsHelping) {
+            // 尋找場上需要採收或灌溉的樹
+            let job = gameState.trees.find(t => t.stage === 'ready') || gameState.trees.find(t => t.stage !== 'ready');
+            if (job) {
+                gameState.farmerX = job.x + 10;
+                gameState.farmerY = job.y + 10;
+                helperFarmer.style.left = gameState.farmerX + 'px'; 
+                helperFarmer.style.top = gameState.farmerY + 'px';
+                
+                if (Math.hypot(job.x - gameState.farmerX, job.y - gameState.farmerY) < 40) {
+                    interactTree(job);
+                }
+            }
+        }
+
+        // 3. 動物移動 AI 機制
+        gameState.animals.forEach(a => {
+            if (a.isScared) return;
+            const el = document.getElementById(a.id);
+            if (!el) return;
+
+            // 優先尋找地上的飼料
+            let feed = gameState.feeds.find(f => f.count > 0);
+            if (feed) {
+                let angle = Math.atan2(feed.y - a.y, feed.x - a.x);
+                a.x += Math.cos(angle) * 70; a.y += Math.sin(angle) * 70;
+                
+                if (Math.hypot(feed.x - a.x, feed.y - a.y) < 40) {
+                    feed.count--;
+                    if (feed.count <= 0) {
+                        gameState.feeds = gameState.feeds.filter(f => f.id !== feed.id);
+                        const fEl = document.getElementById(feed.id); if (fEl) fEl.remove();
+                    }
+                }
+            } else {
+                // 沒有飼料，尋找植物偷吃
+                let tree = gameState.trees.find(t => t.progress > 0);
+                if (tree) {
+                    let angle = Math.atan2(tree.y - a.y, tree.x - a.x);
+                    a.x += Math.cos(angle) * 40; a.y += Math.sin(angle) * 40;
+                    
+                    if (Math.hypot(tree.x - a.x, tree.y - a.y) < 40) {
+                        tree.progress -= 8;
+                        if (tree.progress < 0) tree.progress = 0;
+                    }
+                } else {
+                    // 場上沒食物沒植物，動物隨機悠閒閒晃
+                    a.x += (Math.random() - 0.5) * 60;
+                    a.y += (Math.random() - 0.5) * 60;
+                }
+            }
+
+            // 邊界安全牆限制，絕不跑出大草原之外
+            if (a.x < 30) a.x = 30; if (a.x > maxW - 30) a.x = maxW - 30;
+            if (a.y < 30) a.y = 30; if (a.y > maxH - 30) a.y = maxH - 30;
+
+            el.style.left = a.x + 'px'; el.style.top = a.y + 'px';
+        });
+    }
+</script>
+
+</body>
+</html>
